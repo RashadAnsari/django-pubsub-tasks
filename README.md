@@ -14,7 +14,7 @@ A Celery-like task queue for Django built on Google Cloud Pub/Sub push subscript
 Requires Python 3.11+ and Django 5.1+.
 
 ```bash
-pip install git+https://github.com/RashadAnsari/django-pubsub-tasks.git
+pip install git+https://github.com/RashadAnsari/django-pubsub-tasks.git@v0.1.0
 ```
 
 ```python
