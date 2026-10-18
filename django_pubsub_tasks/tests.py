@@ -20,18 +20,18 @@ class VerifyPushRequestTests(SimpleTestCase):
         with self.assertRaises(PermissionDenied):
             verify_push_request(self.request())
 
-    @mock.patch("tasks.views.id_token.verify_oauth2_token", side_effect=ValueError)
+    @mock.patch("django_pubsub_tasks.views.id_token.verify_oauth2_token", side_effect=ValueError)
     def test_rejects_invalid_token(self, _):
         with self.assertRaises(PermissionDenied):
             verify_push_request(self.request("Bearer bad"))
 
-    @mock.patch("tasks.views.id_token.verify_oauth2_token")
+    @mock.patch("django_pubsub_tasks.views.id_token.verify_oauth2_token")
     def test_rejects_other_service_account(self, verify):
         verify.return_value = {"email": "someone@example.com", "email_verified": True}
         with self.assertRaises(PermissionDenied):
             verify_push_request(self.request("Bearer token"))
 
-    @mock.patch("tasks.views.id_token.verify_oauth2_token")
+    @mock.patch("django_pubsub_tasks.views.id_token.verify_oauth2_token")
     def test_accepts_push_service_account(self, verify):
         verify.return_value = {"email": SERVICE_ACCOUNT, "email_verified": True}
         verify_push_request(self.request("Bearer token"))

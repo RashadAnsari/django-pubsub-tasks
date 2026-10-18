@@ -4,38 +4,92 @@ A Celery-like task queue for Django built on Google Cloud Pub/Sub push subscript
 
 ## How it works
 
-1. `@async_task(queue="test")` wraps a function. Calling `.apply_async(*args, **kwargs)` serialises the function path, arguments and options to JSON and publishes it to the Pub/Sub topic named by `queue`.
-2. A push subscription on that topic POSTs the message to `/tasks/pubsub-receiver`.
-3. The view decodes the message, imports the function and runs it. If the function raises an error, the view returns a 500, and Pub/Sub retries with a 1 to 5 second backoff.
-4. After the subscription's maximum delivery attempts (5), Pub/Sub moves the message to the dead-letter topic, whose push subscription calls `/tasks/dead-letter`, which runs the task's `on_dead` hook.
+1. `@async_task(queue="my-queue")` wraps a function. Calling `.apply_async(*args, **kwargs)` serialises the function path, arguments and options to JSON and publishes it to the Pub/Sub topic named by `queue`.
+2. A push subscription on that topic POSTs the message to `pubsub-receiver`.
+3. The view decodes the message, imports the function and runs it. If the function raises an error, the view returns a 500 and Pub/Sub retries it according to the subscription's retry policy.
+4. After the subscription's maximum delivery attempts, Pub/Sub moves the message to the dead-letter topic, whose push subscription calls `dead-letter`, which runs the task's `on_dead` hook.
+
+## Install
+
+Requires Python 3.11+ and Django 5.1+.
+
+```bash
+pip install git+https://github.com/RashadAnsari/django-pubsub-tasks.git
+```
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    # ...
+    "simple_history",
+    "django_pubsub_tasks",
+]
+
+PUBSUB_PROJECT_ID = "my-gcp-project"
+PUBSUB_DEAD_LETTER_TOPIC = "my-dead-letter-topic"
+```
+
+```python
+# urls.py
+from django.urls import include, path
+
+urlpatterns = [
+    # ...
+    path("tasks/", include("django_pubsub_tasks.urls")),
+]
+```
+
+```bash
+python manage.py migrate
+```
+
+This adds two endpoints, `tasks/pubsub-receiver` and `tasks/dead-letter`, and the `PubSubTaskLog` model used by `LoggedPubSubTask`.
+
+## Settings
+
+| Setting | Required | Meaning |
+|---|---|---|
+| `PUBSUB_PROJECT_ID` | yes | Google Cloud project the topics live in |
+| `PUBSUB_DEAD_LETTER_TOPIC` | yes | Topic that tasks are sent to when `max_delivery_attempts` is reached |
+| `PUBSUB_MAX_DELIVERY_ATTEMPTS` | no, default `5` | Must match `max_delivery_attempts` in your subscriptions' dead-letter policy |
+| `PUBSUB_PUSH_AUDIENCE` | outside the emulator | Audience of the push subscription's OIDC token |
+| `PUBSUB_PUSH_SERVICE_ACCOUNT` | outside the emulator | Service account the push subscription signs its token with |
+
+When the `PUBSUB_EMULATOR_HOST` environment variable is set, the client uses the emulator and the token check is skipped, since the emulator doesn't sign push requests.
+
+## Pub/Sub setup
+
+For each queue, create a topic and a push subscription to `https://<your-host>/tasks/pubsub-receiver`, with a dead-letter policy pointing at `PUBSUB_DEAD_LETTER_TOPIC`. Create a push subscription on the dead-letter topic to `https://<your-host>/tasks/dead-letter`.
+
+Turn on [authentication for both push subscriptions](https://cloud.google.com/pubsub/docs/authenticate-push-subscriptions) and set `PUBSUB_PUSH_AUDIENCE` and `PUBSUB_PUSH_SERVICE_ACCOUNT` to match. Both views reject requests with a 403 unless they carry a valid Google-signed token with that audience, issued to that service account.
 
 ## Defining tasks
 
 ```python
-from tasks.decorators import async_task
-from tasks.pubsub import LoggedPubSubTask
-from tasks.tasks import Task
+from django_pubsub_tasks.decorators import async_task
+from django_pubsub_tasks.pubsub import LoggedPubSubTask
+from django_pubsub_tasks.tasks import Task
 
 
-@async_task(queue="test")
-def add(x: int, y: int):
-    return x + y
+@async_task(queue="emails")
+def send_email(user_id: int):
+    ...
 
 
 # bind=True passes the task object in as `task`
-@async_task(queue="test", bind=True)
-def add_bound(task: Task, x: int, y: int):
-    return x + y
+@async_task(queue="emails", bind=True)
+def send_digest(task: Task, user_id: int):
+    ...
 
 
 # LoggedPubSubTask records every task in the PubSubTaskLog model
-@async_task(queue="test", bind=True, base_class=LoggedPubSubTask, max_delivery_attempts=3)
-def add_logged(task: Task, x: int, y: int):
-    return x + y
+@async_task(queue="billing", bind=True, base_class=LoggedPubSubTask, max_delivery_attempts=3)
+def charge(task: Task, invoice_id: int):
+    ...
 
 
-add.apply_async(x=2, y=3)
-add_logged.apply_async(x=2, y=3, ordering_key="customer-42")
+send_email.apply_async(user_id=42)
+charge.apply_async(invoice_id=7, ordering_key="customer-42")
 ```
 
 | Option | Meaning |
@@ -43,12 +97,14 @@ add_logged.apply_async(x=2, y=3, ordering_key="customer-42")
 | `queue` | Pub/Sub topic to publish to |
 | `bind` | Pass the task object to the function as the `task` keyword argument |
 | `base_class` | `PubSubTask` (default) or `LoggedPubSubTask`, or your own subclass |
-| `max_delivery_attempts` | Send the task to the dead-letter topic after this many attempts instead of waiting for the subscription limit. Must be below 5. It does not work with the emulator. |
+| `max_delivery_attempts` | Send the task to the dead-letter topic after this many attempts instead of waiting for the subscription limit. Must be below `PUBSUB_MAX_DELIVERY_ATTEMPTS`. It doesn't work with the emulator. |
 | `ordering_key` (on `apply_async`) | Pub/Sub ordering key |
 
-`LoggedPubSubTask` stores each task's parameters, status (`STARTED`, `SUCCEEDED`, `DEAD`), delivery attempts and timestamps in `PubSubTaskLog`, with full history via django-simple-history.
+Task arguments must be JSON-serialisable. `LoggedPubSubTask` stores each task's parameters, status (`STARTED`, `SUCCEEDED`, `DEAD`), delivery attempts and timestamps in `PubSubTaskLog`, with full history via django-simple-history.
 
-## Run locally
+## Example project
+
+[example/](example/) is a Django project that uses the app against the local Pub/Sub emulator. Its [demo.py](example/demo.py) defines four demo tasks.
 
 Requires Python 3.11, Poetry and Docker. A [shell.nix](shell.nix) is included if you use Nix.
 
@@ -56,39 +112,30 @@ Requires Python 3.11, Poetry and Docker. A [shell.nix](shell.nix) is included if
 poetry install
 make up                    # start the Pub/Sub emulator on localhost:8532
 python manage.py migrate
-make create_local_pubsub   # create topics and push subscriptions
+make create_local_pubsub   # create the demo topics and push subscriptions
 make runserver
 ```
 
-Then open http://localhost:8000/tasks/apply-async (only routed when `DEBUG` is on) to publish the demo tasks in [tasks/views.py](tasks/views.py) and watch them run in the server log.
+Then open http://localhost:8000/tasks/apply-async to publish the demo tasks and watch them run in the server log.
 
 The emulator runs in Docker and pushes to `http://host.docker.internal:8000/tasks/...`, which works out of the box on Docker Desktop. On Linux, add `extra_hosts: ["host.docker.internal:host-gateway"]` to the service in [docker-compose.yml](docker-compose.yml).
 
-## Configuration
+The example's [settings.py](example/settings.py) reads these environment variables:
 
-Everything is read from environment variables in [settings.py](django_pubsub_tasks/settings.py):
-
-| Variable | Default | Meaning |
-|---|---|---|
-| `DJANGO_DEBUG` | `true` | When true, the app uses the emulator at `localhost:8532` unless `PUBSUB_EMULATOR_HOST` says otherwise |
-| `DJANGO_SECRET_KEY` | `secret` in debug, required otherwise | Django secret key |
-| `DJANGO_ALLOWED_HOSTS` | `*` | Comma-separated hosts |
-| `PUBSUB_PROJECT_ID` | `test-project` | Google Cloud project |
-| `PUBSUB_DEAD_LETTER_TOPIC` | `test-dlq` | Dead-letter topic |
-| `PUBSUB_MAX_DELIVERY_ATTEMPTS` | `5` | Must match the subscription's dead-letter policy |
-| `PUBSUB_PUSH_BASE_URL` | `http://host.docker.internal:8000/tasks` | Push endpoint base used by `create_local_pubsub` |
-| `PUBSUB_PUSH_AUDIENCE` | | Expected audience of the push token |
-| `PUBSUB_PUSH_SERVICE_ACCOUNT` | | Service account the push subscription signs with |
-
-## Running against real Pub/Sub
-
-Set `DJANGO_DEBUG=false`, a real `DJANGO_SECRET_KEY`, and the project and topic variables above. Create push subscriptions to `/tasks/pubsub-receiver` and `/tasks/dead-letter` with [authentication enabled](https://cloud.google.com/pubsub/docs/authenticate-push-subscriptions), and set `PUBSUB_PUSH_AUDIENCE` and `PUBSUB_PUSH_SERVICE_ACCOUNT` to the audience and service account of those subscriptions.
-
-Outside the emulator, both receiver views check the request's Google-signed OIDC token: it must be valid, carry that audience, and be issued to that service account. Anything else gets a 403.
+| Variable | Default |
+|---|---|
+| `DJANGO_DEBUG` | `true`; also points the client at the emulator on `localhost:8532` |
+| `DJANGO_SECRET_KEY` | `secret` in debug, required otherwise |
+| `DJANGO_ALLOWED_HOSTS` | `*` |
+| `PUBSUB_PROJECT_ID` | `test-project` |
+| `PUBSUB_DEAD_LETTER_TOPIC` | `test-dlq` |
+| `PUBSUB_MAX_DELIVERY_ATTEMPTS` | `5` |
+| `PUBSUB_PUSH_BASE_URL` | `http://host.docker.internal:8000/tasks`, used by `create_local_pubsub` |
+| `PUBSUB_PUSH_AUDIENCE`, `PUBSUB_PUSH_SERVICE_ACCOUNT` | unset |
 
 ## Development
 
 ```bash
-make local                  # lock, ruff format, ruff check
-python manage.py test tasks
+make local                                 # lock, ruff format, ruff check
+python manage.py test django_pubsub_tasks
 ```

@@ -24,7 +24,8 @@ PUBSUB_PUSH_AUDIENCE = os.environ.get("PUBSUB_PUSH_AUDIENCE")
 PUBSUB_PUSH_SERVICE_ACCOUNT = os.environ.get("PUBSUB_PUSH_SERVICE_ACCOUNT")
 
 INSTALLED_APPS = [
-    "tasks",
+    "django_pubsub_tasks",
+    "example",
     "simple_history",
     "django.contrib.admin",
     "django.contrib.auth",
@@ -45,7 +46,7 @@ MIDDLEWARE = [
     "simple_history.middleware.HistoryRequestMiddleware",
 ]
 
-ROOT_URLCONF = "django_pubsub_tasks.urls"
+ROOT_URLCONF = "example.urls"
 
 TEMPLATES = [
     {
@@ -63,7 +64,7 @@ TEMPLATES = [
     },
 ]
 
-WSGI_APPLICATION = "django_pubsub_tasks.wsgi.application"
+WSGI_APPLICATION = "example.wsgi.application"
 
 DATABASES = {
     "default": {

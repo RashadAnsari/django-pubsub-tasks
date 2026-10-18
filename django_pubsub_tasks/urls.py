@@ -1,7 +1,8 @@
-from django.contrib import admin
-from django.urls import include, path
+from django.urls import path
+
+from .views import dead_letter, pubsub_receiver
 
 urlpatterns = [
-    path("admin/", admin.site.urls),
-    path("tasks/", include("tasks.urls")),
+    path("pubsub-receiver", pubsub_receiver, name="pubsub-receiver"),
+    path("dead-letter", dead_letter, name="dead-letter"),
 ]

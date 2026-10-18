@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "django-pubsub-tasks"
 version = "0.1.0"
-description = ""
+description = "A Celery-like task queue for Django on Google Cloud Pub/Sub push subscriptions"
 authors = []
 
 [tool.poetry.dependencies]
