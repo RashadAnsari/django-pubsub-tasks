@@ -4,6 +4,7 @@ import uuid
 from dataclasses import dataclass
 from typing import Optional
 
+from django.conf import settings
 from django.utils import timezone
 
 from dataclass_wizard import asdict
@@ -12,9 +13,9 @@ from google.cloud import pubsub_v1
 from .models import PubSubTaskLog
 from .tasks import Task, TaskParams, TaskWrapper
 
-PROJECT_ID = "test-project"
-DEAD_LETTER_TOPIC = "test-dlq"
-MAX_CONFIGURED_DELIVERY_ATTEMPTS = 5
+PROJECT_ID = settings.PUBSUB_PROJECT_ID
+DEAD_LETTER_TOPIC = settings.PUBSUB_DEAD_LETTER_TOPIC
+MAX_CONFIGURED_DELIVERY_ATTEMPTS = settings.PUBSUB_MAX_DELIVERY_ATTEMPTS
 publisher = pubsub_v1.PublisherClient(
     publisher_options=pubsub_v1.types.PublisherOptions(
         enable_message_ordering=True,

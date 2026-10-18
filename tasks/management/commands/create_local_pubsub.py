@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.core.management.base import BaseCommand
 
 from google.api_core.exceptions import AlreadyExists
@@ -10,8 +11,8 @@ class Command(BaseCommand):
         publisher = pubsub_v1.PublisherClient()
         subscriber = pubsub_v1.SubscriberClient()
 
-        project_id = "test-project"
-        base_url = "http://host.docker.internal:8000/tasks"
+        project_id = settings.PUBSUB_PROJECT_ID
+        base_url = settings.PUBSUB_PUSH_BASE_URL
 
         topic = "test"
         subscription = "test-sub"
@@ -19,7 +20,7 @@ class Command(BaseCommand):
         subscription_path = subscriber.subscription_path(project_id, subscription)
         push_config = pubsub_v1.types.PushConfig(push_endpoint=f"{base_url}/pubsub-receiver")
 
-        dead_letter_topic = "test-dlq"
+        dead_letter_topic = settings.PUBSUB_DEAD_LETTER_TOPIC
         dead_letter_subscription = "test-dlq-sub"
         dead_letter_topic_path = publisher.topic_path(project_id, dead_letter_topic)
         dead_letter_subscription_path = subscriber.subscription_path(project_id, dead_letter_subscription)
@@ -43,7 +44,7 @@ class Command(BaseCommand):
         )
         dead_letter_policy = pubsub_v1.types.DeadLetterPolicy(
             dead_letter_topic=dead_letter_topic_path,
-            max_delivery_attempts=5,
+            max_delivery_attempts=settings.PUBSUB_MAX_DELIVERY_ATTEMPTS,
         )
 
         try:

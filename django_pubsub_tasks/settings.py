@@ -1,15 +1,27 @@
 import os
 from pathlib import Path
 
-DEBUG = True
+DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 
-SECRET_KEY = "secret"
+# Outside DEBUG an unset key leaves SECRET_KEY empty, and Django refuses to start.
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "secret" if DEBUG else "")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-os.environ["PUBSUB_EMULATOR_HOST"] = "localhost:8532"
+if DEBUG:
+    os.environ.setdefault("PUBSUB_EMULATOR_HOST", "localhost:8532")
 
-ALLOWED_HOSTS = ["*"]
+ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+
+PUBSUB_PROJECT_ID = os.environ.get("PUBSUB_PROJECT_ID", "test-project")
+PUBSUB_DEAD_LETTER_TOPIC = os.environ.get("PUBSUB_DEAD_LETTER_TOPIC", "test-dlq")
+# Must match max_delivery_attempts on the subscriptions' dead-letter policy.
+PUBSUB_MAX_DELIVERY_ATTEMPTS = int(os.environ.get("PUBSUB_MAX_DELIVERY_ATTEMPTS", "5"))
+# Base URL the push subscriptions call; used by the create_local_pubsub command.
+PUBSUB_PUSH_BASE_URL = os.environ.get("PUBSUB_PUSH_BASE_URL", "http://host.docker.internal:8000/tasks")
+# Push requests are verified against these unless PUBSUB_EMULATOR_HOST is set.
+PUBSUB_PUSH_AUDIENCE = os.environ.get("PUBSUB_PUSH_AUDIENCE")
+PUBSUB_PUSH_SERVICE_ACCOUNT = os.environ.get("PUBSUB_PUSH_SERVICE_ACCOUNT")
 
 INSTALLED_APPS = [
     "tasks",

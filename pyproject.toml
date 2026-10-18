@@ -8,6 +8,8 @@ authors = []
 python = "^3.11"
 Django = "^5.1.2"
 google-cloud-pubsub = "^2.26.1"
+google-auth = "^2.35.0"  # verifies Pub/Sub push tokens in tasks/views.py
+requests = "^2.32.3"  # transport for google-auth token verification
 dataclass-wizard = "^0.23.0"
 django-simple-history = "^3.7.0"
 
